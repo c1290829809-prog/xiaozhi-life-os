@@ -3,129 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b1020" />
-    <meta name="description" content="小智是一个把记忆、计划与行动放在一起的 AI 个人生活系统。" />
-    <title>小智｜你的 AI 个人生活系统</title>
+    <meta name="theme-color" content="#f8f8fc" />
+    <meta name="description" content="小智，记录生活、整理记忆、陪你完成今天。" />
+    <title>小智｜你的个人生活系统</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#main">跳到主要内容</a>
-    <header class="site-header" aria-label="主导航">
-      <a class="brand" href="#top" aria-label="小智首页">
-        <span class="brand-mark" aria-hidden="true">知</span>
-        <span>
-          <strong>小智</strong>
-          <small>AI LIFE OS</small>
-        </span>
-      </a>
-      <nav class="site-nav" aria-label="页面导航">
-        <a href="#why">为什么小智</a>
-        <a href="#modules">生活模块</a>
-        <a href="#preview">今日视图</a>
+    <main class="app-shell" id="app-shell">
+      <div class="ambient ambient-blue"></div>
+      <div class="ambient ambient-peach"></div>
+      <header class="app-header">
+        <div class="header-copy">
+          <p class="date-line" data-date-line>2026年10月12日 · 星期一</p>
+          <h1 data-greeting>早上好，朋友</h1>
+          <p class="header-subtitle">记录生活的美好，慢慢成为更懂自己的你。</p>
+        </div>
+        <button class="profile-orb" type="button" data-tab="me" aria-label="打开我的页面"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" /><span class="online-dot"></span></button>
+      </header>
+
+      <section class="view-stack" id="view-stack" aria-live="polite"></section>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item is-active" type="button" data-tab="home"><span class="nav-icon">⌂</span><span>首页</span></button>
+        <button class="nav-item" type="button" data-tab="memory"><span class="nav-icon">◉</span><span>记忆</span></button>
+        <button class="chat-fab" type="button" data-tab="chat" aria-label="打开和小智对话"><span>•••</span></button>
+        <button class="nav-item" type="button" data-tab="box"><span class="nav-icon">▣</span><span>Box</span></button>
+        <button class="nav-item" type="button" data-tab="me"><span class="nav-icon">◎</span><span>我的</span></button>
       </nav>
-      <button class="button button-small button-ghost" data-open-capture>快速记录 <span aria-hidden="true">↗</span></button>
-    </header>
-
-    <main id="main">
-      <section class="hero" id="top">
-        <div class="hero-copy reveal">
-          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> 给生活一个可以回来的地方</p>
-          <h1>把生活交给<br /><em>小智</em>，把时间还给自己。</h1>
-          <p class="hero-lede">不是又一个待办清单，而是一位懂得你的节奏、记得你的上下文、愿意陪你复盘的个人 AI。</p>
-          <div class="hero-actions">
-            <button class="button button-primary" data-open-capture>记录此刻 <span aria-hidden="true">↗</span></button>
-            <a class="text-link" href="#preview">先看看它怎么工作 <span aria-hidden="true">↓</span></a>
-          </div>
-          <div class="hero-note"><span>01</span><p>从一句话开始<br /><b>其余的交给小智整理</b></p></div>
-        </div>
-        <div class="hero-visual reveal reveal-delay" aria-label="小智个人生活系统的抽象视觉">
-          <div class="visual-orbit orbit-one"></div>
-          <div class="visual-orbit orbit-two"></div>
-          <div class="hero-image-wrap">
-            <img src="assets/xiaozhi-hero.png" alt="抽象的个人生活系统视觉：记忆、计划与日常被安静地连接起来" />
-          </div>
-          <div class="float-card float-card-top"><span class="mini-kicker">NOW</span><strong>慢一点，也在前进</strong><small>小智，今天 08:42</small></div>
-          <div class="float-card float-card-bottom"><span class="mini-kicker">MEMORY</span><strong>你的上下文已连接</strong><small>12 条相关记忆 · 3 个下一步</small></div>
-        </div>
-      </section>
-
-      <section class="signal-strip" aria-label="系统状态">
-        <span>今天，小智帮你留意</span>
-        <div class="signal-items">
-          <span><b>03</b> 件重要的事</span>
-          <span><b>07</b> 条待整理记录</span>
-          <span><b>01</b> 次温柔提醒</span>
-        </div>
-      </section>
-
-      <section class="section why-section" id="why">
-        <div class="section-intro reveal">
-          <p class="eyebrow">WHY XIAOZHI</p>
-          <h2>你不需要<br /><em>更努力地记住。</em></h2>
-        </div>
-        <div class="why-content reveal reveal-delay">
-          <p class="large-copy">你只需要把想法交出来。小智会把零散的对话、灵感、计划和生活线索，慢慢织成一张属于你的个人上下文。</p>
-          <div class="principles">
-            <article class="principle"><span>01</span><h3>先接住，再整理</h3><p>想到什么就说什么，不必先想好分类。小智会在需要的时候帮你归位。</p></article>
-            <article class="principle"><span>02</span><h3>记得你正在做什么</h3><p>把一次次对话连成连续的记忆，让建议不再从零开始。</p></article>
-            <article class="principle"><span>03</span><h3>把下一步变得清楚</h3><p>从“我想做”到“我现在就能做”，每天只给你刚刚好的推进。</p></article>
-          </div>
-        </div>
-      </section>
-
-      <section class="section modules-section" id="modules">
-        <div class="section-heading reveal">
-          <div><p class="eyebrow">ONE SYSTEM, MANY MOMENTS</p><h2>生活不是模块，<br /><em>但可以被好好照顾。</em></h2></div>
-          <p>小智把个人生活里容易散落的几类事情放在一起，但不强迫你用复杂的方式管理自己。</p>
-        </div>
-        <div class="module-grid">
-          <article class="module-card module-main reveal">
-            <div class="module-top"><span class="module-index">01 / MEMORY</span><span class="module-arrow" aria-hidden="true">↗</span></div>
-            <div><h3>你的记忆，有上下文。</h3><p>从一次谈话，到一个长期项目，小智帮你记得那些真正重要的线索。</p></div>
-            <div class="memory-lines" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-          </article>
-          <article class="module-card module-accent reveal reveal-delay-1">
-            <div class="module-top"><span class="module-index">02 / TODAY</span><span class="module-arrow" aria-hidden="true">↗</span></div>
-            <div><h3>今天，只做重要的事。</h3><p>把大脑里的噪音变成今天真正可执行的三步。</p></div>
-            <div class="today-list" aria-label="今日三件事"><span><b>01</b> 给项目写一个开头</span><span><b>02</b> 给自己留出晚饭时间</span><span><b>03</b> 结束前做一次复盘</span></div>
-          </article>
-          <article class="module-card module-dark reveal reveal-delay-2">
-            <div class="module-top"><span class="module-index">03 / REFLECT</span><span class="module-arrow" aria-hidden="true">↗</span></div>
-            <div><h3>让经历，留下意义。</h3><p>小智不只帮你安排未来，也陪你看见已经走过的路。</p></div>
-            <div class="reflect-mark"><span>↘</span><strong>回望<br />也是前进</strong></div>
-          </article>
-        </div>
-      </section>
-
-      <section class="section preview-section" id="preview">
-        <div class="preview-copy reveal"><p class="eyebrow">A QUIET DAILY VIEW</p><h2>打开小智，<br /><em>先看见自己。</em></h2><p>这里不是报表，是你和生活重新对齐的一小块空间。</p><button class="button button-primary" data-open-capture>写下今天 <span aria-hidden="true">↗</span></button></div>
-        <div class="daily-window reveal reveal-delay" aria-label="今日视图预览">
-          <div class="window-bar"><span class="window-dot"></span><span class="window-dot"></span><span class="window-dot"></span><span class="window-label">小智 / 今日</span><span class="window-date">2026.10.12</span></div>
-          <div class="daily-body">
-            <div class="daily-greeting"><span>星期一，下午好</span><strong>今天不必一次完成所有事。</strong></div>
-            <div class="daily-focus"><div><span class="mini-kicker">FOCUS FOR TODAY</span><h3>把“开始”留给现在</h3><p>你已经想了很久。先写下第一段，不需要完美。</p></div><span class="focus-number">01</span></div>
-            <div class="daily-columns"><div><span class="mini-kicker">NEXT UP</span><div class="next-row"><span>14:30</span><strong>整理项目首页的方向</strong></div><div class="next-row"><span>18:20</span><strong>去走一段路，再回家</strong></div></div><div class="daily-memory"><span class="mini-kicker">FROM MEMORY</span><p>“你说过，真正想要的是一个能陪你生活的系统。”</p><small>小智记于 6 天前</small></div></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="capture-section reveal" aria-labelledby="capture-title">
-        <div><p class="eyebrow">START SMALL</p><h2 id="capture-title">今天有什么<br /><em>想先交给小智？</em></h2></div>
-        <button class="capture-trigger" data-open-capture><span>写一句话，剩下的交给我</span><b aria-hidden="true">↗</b></button>
-      </section>
     </main>
 
-    <footer class="site-footer"><div class="footer-brand"><span class="brand-mark" aria-hidden="true">知</span><div><strong>小智</strong><p>让生活，被好好记得。</p></div></div><div class="footer-meta"><span>AI PERSONAL LIFE SYSTEM</span><span>初版概念页 · 2026</span></div></footer>
-
-    <div class="modal-backdrop" data-modal hidden>
-      <section class="capture-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <button class="modal-close" data-close-capture aria-label="关闭记录窗口">×</button>
-        <p class="eyebrow">QUICK CAPTURE</p><h2 id="modal-title">先把它说出来。</h2><p class="modal-intro">不用整理，不用判断。小智会先帮你接住。</p>
-        <label class="capture-label" for="capture-input">此刻的想法</label><textarea id="capture-input" rows="4" placeholder="例如：我想把个人网站的第一版做得更像一个可以长期使用的空间……"></textarea>
-        <div class="modal-footer"><span class="modal-hint">Enter 记录 · Shift + Enter 换行</span><button class="button button-primary" data-submit-capture>交给小智 <span aria-hidden="true">↗</span></button></div>
-        <div class="capture-result" data-capture-result hidden><span class="result-check" aria-hidden="true">✓</span><div><strong>收到，我先替你放在这里。</strong><p>小智会在下一步帮你判断它更像一个想法、任务，还是需要被记住的事情。</p></div></div>
+    <div class="modal-layer" data-modal hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <button class="modal-close" type="button" data-close-modal aria-label="关闭">×</button>
+        <p class="section-kicker">QUICK CAPTURE</p>
+        <h2 id="modal-title">把此刻交给小智</h2>
+        <p class="modal-copy" data-modal-copy>先记录，不急着分类。之后可以在记忆里慢慢整理。</p>
+        <label for="modal-input" class="field-label">内容</label>
+        <textarea id="modal-input" rows="4" placeholder="今天发生了什么，或者你突然想到了什么？"></textarea>
+        <div class="modal-actions"><button class="text-button" type="button" data-close-modal>暂时不记</button><button class="primary-button" type="button" data-save-modal>保存记忆 <span>↗</span></button></div>
       </section>
     </div>
+
     <script src="script.js"></script>
   </body>
 </html>
