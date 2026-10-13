@@ -263,6 +263,7 @@ document.querySelector('[data-profile-save]').addEventListener('click', saveProf
 document.querySelectorAll('[data-avatar-option]').forEach((button) => button.addEventListener('click', () => { selectedAvatarKey = safeAvatarKey(button.dataset.avatarOption); document.querySelectorAll('[data-avatar-option]').forEach((item) => { const selected = item === button; item.classList.toggle('is-selected', selected); item.setAttribute('aria-checked', String(selected)); }); }));
 profileEditor.addEventListener('click', (event) => { if (event.target === profileEditor) closeProfileEditor(); });
 document.querySelector('#memory-date').addEventListener('change', () => { memoryDateManuallyChanged = true; });
+modalInput.addEventListener('input', () => { if (modalMode !== 'memory' || memoryDateManuallyChanged) return; document.querySelector('#memory-date').value = parseMemoryDate(modalInput.value) || todayDateKey(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !modal.hidden) closeModal(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !authModal.hidden) closeAuth(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !profileEditor.hidden) closeProfileEditor(); });
