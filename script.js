@@ -47,6 +47,8 @@ state.memories = state.memories.map((item) => {
   const dateKey = isDateKey(item.dateKey) ? item.dateKey : parseMemoryDate(item.title) || parseMemoryDate(item.text) || parseMemoryDate(item.date) || todayDateKey();
   return { ...item, dateKey, date: formatMemoryDate(dateKey) };
 });
+if (!state.memories.some((item) => item.dateKey === state.selectedMemoryDate)) state.selectedMemoryDate = newestMemoryDate();
+state.calendarMonth = state.selectedMemoryDate.slice(0, 7);
 const viewStack = document.querySelector('#view-stack');
 const modal = document.querySelector('[data-modal]');
 const modalInput = document.querySelector('#modal-input');
@@ -77,6 +79,7 @@ function parseMemoryDate(value) {
 }
 function formatMemoryDate(dateKey) { const date = new Date(`${dateKey}T12:00:00`); return `${date.getMonth() + 1}月${date.getDate()}日`; }
 function calendarTitle(dateKey) { const [year, month] = dateKey.split('-'); return `${year}年${Number(month)}月`; }
+function newestMemoryDate() { return state.memories.reduce((latest, item) => item.dateKey > latest ? item.dateKey : latest, '') || todayDateKey(); }
 const avatarKeys = ['pink-blue', 'sky', 'lilac', 'peach', 'mint'];
 function safeAvatarKey(value) { return avatarKeys.includes(value) ? value : 'pink-blue'; }
 function mascotMarkup(className = '') { const avatarKey = safeAvatarKey(state.profile?.avatarKey); return `<img class="${className} avatar-${avatarKey}" src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" />`; }
@@ -118,7 +121,8 @@ async function hydrateFromCloud() {
   const hasCloudRows = [memories.data, tasks.data, boxes.data, messages.data].some((rows) => rows.length > 0);
   if (!hasCloudRows) { await syncStateToCloud(); return; }
   state.memories = memories.data.map((item) => { const storedDate = item.occurred_at ? new Date(item.occurred_at) : new Date(); const dateKey = parseMemoryDate(item.title) || parseMemoryDate(item.body) || localDateKey(storedDate); return { id: item.id, dateKey, date: formatMemoryDate(dateKey), title: item.title, text: item.body, tag: item.tag }; });
-  if (!state.memories.some((item) => item.dateKey === state.selectedMemoryDate)) state.selectedMemoryDate = todayDateKey();
+  if (!state.memories.some((item) => item.dateKey === state.selectedMemoryDate)) state.selectedMemoryDate = newestMemoryDate();
+  state.calendarMonth = state.selectedMemoryDate.slice(0, 7);
   state.tasks = tasks.data.map((item) => ({ id: item.id, text: item.text, time: item.time_text, done: item.done }));
   state.boxes = boxes.data.map((item) => ({ id: item.id, icon: item.icon, title: item.title, count: item.item_count, detail: item.detail, status: item.status, type: item.box_type }));
   state.messages = messages.data.map((item) => ({ role: item.message_role, text: item.body, time: item.display_time }));
