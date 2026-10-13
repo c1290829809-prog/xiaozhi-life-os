@@ -21,7 +21,7 @@ try {
         resend: async () => ({ data: null, error: { message: '云端服务暂时无法加载，请刷新后重试。' } }),
         signOut: async () => ({ error: null }),
       },
-      from: () => ({ select: () => ({ order: async () => ({ data: [], error: null }) }), upsert: async () => ({ error: null }) }),
+      from: () => ({ select: () => ({ order: async () => ({ data: [], error: null }), maybeSingle: async () => ({ data: null, error: null }) }), upsert: async () => ({ error: null }) }),
     };
   }
 }
@@ -34,9 +34,11 @@ const defaultState = {
   memories: [],
   boxes: [],
   messages: [],
+  profile: { displayName: '', avatarKey: 'pink-blue' },
 };
 
 let state = loadState();
+state.profile = { ...defaultState.profile, ...(state.profile || {}) };
 const viewStack = document.querySelector('#view-stack');
 const modal = document.querySelector('[data-modal]');
 const modalInput = document.querySelector('#modal-input');
@@ -50,7 +52,9 @@ function saveLocalState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(sta
 function saveState() { saveLocalState(); if (cloudUser) void syncStateToCloud(); }
 function esc(value) { return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
 function todayText() { const now = new Date(); const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']; return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 · ${weekdays[now.getDay()]}`; }
-function mascotMarkup(className = '') { return `<img class="${className}" src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" />`; }
+const avatarKeys = ['pink-blue', 'sky', 'lilac', 'peach', 'mint'];
+function safeAvatarKey(value) { return avatarKeys.includes(value) ? value : 'pink-blue'; }
+function mascotMarkup(className = '') { const avatarKey = safeAvatarKey(state.profile?.avatarKey); return `<img class="${className} avatar-${avatarKey}" src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" />`; }
 function formatCloudDate(value) { if (!value) return '刚刚'; const date = new Date(value); if (Number.isNaN(date.getTime())) return '刚刚'; return date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
 function setCloudStatus(text, tone = '') { const node = document.querySelector('[data-cloud-status]'); if (node) { node.textContent = text; node.dataset.tone = tone; } }
 
@@ -60,6 +64,7 @@ async function syncStateToCloud() {
   setCloudStatus('同步中…');
   const user_id = cloudUser.id;
   const operations = [
+    supabase.from('profiles').upsert({ id: user_id, display_name: state.profile.displayName || cloudUser.email?.split('@')[0] || '新用户', avatar_url: safeAvatarKey(state.profile.avatarKey), updated_at: new Date().toISOString() }, { onConflict: 'id' }),
     supabase.from('memories').upsert(state.memories.map((item) => ({ user_id, id: String(item.id), title: item.title, body: item.text, tag: item.tag, occurred_at: new Date().toISOString() })), { onConflict: 'user_id,id' }),
     supabase.from('tasks').upsert(state.tasks.map((item, index) => ({ user_id, id: String(item.id), text: item.text, time_text: item.time, done: item.done, sort_order: index })), { onConflict: 'user_id,id' }),
     supabase.from('boxes').upsert(state.boxes.map((item) => ({ user_id, id: String(item.id), icon: item.icon, title: item.title, item_count: item.count, detail: item.detail, status: item.status, box_type: item.type })), { onConflict: 'user_id,id' }),
@@ -75,14 +80,16 @@ async function syncStateToCloud() {
 async function hydrateFromCloud() {
   if (!cloudUser) return;
   setCloudStatus('读取云端数据…');
-  const [memories, tasks, boxes, messages] = await Promise.all([
+  const [profile, memories, tasks, boxes, messages] = await Promise.all([
+    supabase.from('profiles').select('*').maybeSingle(),
     supabase.from('memories').select('*').order('created_at', { ascending: false }),
     supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
     supabase.from('boxes').select('*').order('created_at', { ascending: false }),
     supabase.from('chat_messages').select('*').order('created_at', { ascending: true }),
   ]);
-  const failure = [memories, tasks, boxes, messages].find((result) => result.error);
+  const failure = [profile, memories, tasks, boxes, messages].find((result) => result.error);
   if (failure) { setCloudStatus('云端读取失败', 'error'); console.error(failure.error); return; }
+  state.profile = { displayName: profile.data?.display_name || cloudUser.user_metadata?.display_name || cloudUser.email?.split('@')[0] || '新用户', avatarKey: safeAvatarKey(profile.data?.avatar_url) };
   const hasCloudRows = [memories.data, tasks.data, boxes.data, messages.data].some((rows) => rows.length > 0);
   if (!hasCloudRows) { await syncStateToCloud(); return; }
   state.memories = memories.data.map((item) => ({ id: item.id, date: formatCloudDate(item.occurred_at), title: item.title, text: item.body, tag: item.tag }));
@@ -111,6 +118,8 @@ async function initCloud() {
 
 function render() {
   document.querySelector('[data-date-line]').textContent = todayText();
+  const headerAvatar = document.querySelector('[data-header-avatar]');
+  if (headerAvatar) headerAvatar.className = `avatar-${safeAvatarKey(state.profile?.avatarKey)}`;
   document.querySelectorAll('.nav-item[data-tab]').forEach((button) => button.classList.toggle('is-active', button.dataset.tab === state.activeTab));
   viewStack.innerHTML = renderView(state.activeTab); bindViewEvents(); updateAuthUI();
 }
@@ -131,7 +140,7 @@ function renderCalendar() { const now = new Date(); const year = now.getFullYear
 function renderMemory() { const timelineMode = state.memoryView === 'timeline'; const memoryCards = state.memories.length ? state.memories.map((memory) => `<article class="glass-card memory-card" data-memory-id="${memory.id}" role="button" tabindex="0"><div class="memory-meta"><span>${esc(memory.date)}</span><span class="memory-tag">${esc(memory.tag)}</span></div><h3>${esc(memory.title)}</h3><p>${esc(memory.text)}</p><span class="memory-open">查看详情 ›</span></article>`).join('') : '<div class="glass-card empty-state"><strong>还没有记忆</strong><p>把今天的一句话交给小智，之后再慢慢回看。</p></div>'; return `<section class="view memory-view"><div class="page-header"><div><p>${new Date().getFullYear()}年${new Date().getMonth() + 1}月</p><h1>记忆</h1></div><div class="page-header-actions"><button class="round-action" type="button" data-open-modal aria-label="添加记忆">＋</button><button class="round-action" type="button" data-memory-search aria-label="搜索记忆">⌕</button></div></div><div class="segmented"><button class="segment ${timelineMode ? '' : 'is-active'}" type="button" data-memory-view="calendar">日历</button><button class="segment ${timelineMode ? 'is-active' : ''}" type="button" data-memory-view="timeline">时间轴</button></div>${timelineMode ? `<article class="glass-card timeline-intro"><strong>按时间回看</strong><p>把生活里的小片段串起来，看看最近的节奏。</p></article>` : `<article class="glass-card calendar-card"><div class="calendar-head"><strong>本月记录</strong><span class="report-date">${state.memories.length} 条记忆</span></div>${renderCalendar()}</article>`}<div class="section-title-row"><div><h2>${timelineMode ? '全部记忆' : '今天的记忆'}</h2><p>Ordinary days, extraordinary memories.</p></div></div><div class="timeline">${memoryCards}</div><button class="quick-capture" type="button" data-open-modal><span>添加一条新的记忆</span><strong>＋</strong></button></section>`; }
 function renderChat() { const messages = state.messages.length ? state.messages.map((message) => `<div class="message ${message.role}">${esc(message.text)}<small>${esc(message.time)}</small></div>`).join('') : '<div class="chat-empty"><strong>从一句话开始</strong><p>告诉小智今天发生了什么，或者只是说说你此刻的心情。</p></div>'; return `<section class="view chat-view"><div class="chat-header"><div class="chat-avatar">${mascotMarkup()}</div><div><h1>小智</h1><p>在线 · 等你开始记录</p></div><button class="round-action chat-more" type="button" data-chat-more aria-label="更多选项">···</button></div><div class="messages">${messages}</div><div class="quick-prompts"><button class="prompt-chip" type="button" data-prompt="我今天想记录一件小事">记录一件小事</button><button class="prompt-chip" type="button" data-prompt="帮我整理今天的重点">整理今天的重点</button><button class="prompt-chip" type="button" data-prompt="我想聊聊最近的状态">聊聊最近的状态</button></div><form class="chat-composer" data-chat-form><textarea rows="1" name="message" placeholder="和小智说点什么…" aria-label="和小智说点什么"></textarea><button class="send-button" type="submit" aria-label="发送">➤</button></form></section>`; }
 function renderBox() { const boxList = state.boxes.length ? state.boxes.map((box) => `<button class="glass-card box-item" type="button" data-box-item data-box-id="${box.id}" data-box-type="${esc(box.type)}"><span class="box-thumb">${box.icon}</span><span class="box-copy"><strong>${esc(box.title)}</strong><p>${box.count} 条内容 · ${esc(box.detail)}</p></span><span class="box-status">${esc(box.status)}</span><span class="box-chevron">›</span></button>`).join('') : '<div class="glass-card empty-state"><strong>还没有 Box</strong><p>创建一个主题，把之后想持续收集的内容放在一起。</p></div>'; const suggestion = state.memories.length || state.boxes.length ? `<article class="glass-card box-suggestion"><span class="box-suggestion-icon">♧</span><div class="box-suggestion-copy"><strong>创建一个主题</strong><p>为你正在关注的生活、工作或灵感建立一个专属 Box。</p></div><button type="button" data-create-box>创建</button></article>` : ''; return `<section class="view box-view"><div class="page-header"><div><p>${todayText()}</p><h1>Box</h1></div><button class="round-action" type="button" data-create-box aria-label="创建 Box">＋</button></div><p class="page-description">收集 · 整理 · 延续</p><label class="search-box"><span>⌕</span><input type="search" placeholder="搜索你的 Box…" data-box-search /></label><div class="filter-row"><button class="filter-chip is-active" type="button" data-box-filter="全部">全部</button><button class="filter-chip" type="button" data-box-filter="生活">生活</button><button class="filter-chip" type="button" data-box-filter="工作">工作</button><button class="filter-chip" type="button" data-box-filter="灵感">灵感</button></div>${suggestion}<div class="section-title-row"><div><h2>我收藏的 Box</h2><p>My Boxes</p></div>${state.boxes.length ? '<button class="section-action" type="button" data-view-all-boxes>查看全部 ›</button>' : ''}</div><div class="box-list" data-box-list>${boxList}</div><div class="section-title-row"><div><h2>创建新的 Box</h2><p>New Box</p></div></div><div class="new-box-grid"><button class="glass-card new-box-button" type="button" data-create-box><span>☘</span><strong>生活</strong><small>Life</small></button><button class="glass-card new-box-button" type="button" data-create-box><span>▣</span><strong>工作</strong><small>Work</small></button><button class="glass-card new-box-button" type="button" data-create-box><span>✧</span><strong>灵感</strong><small>Inspiration</small></button></div></section>`; }
-function renderMe() { const accountLabel = cloudUser ? `已连接 · ${esc(cloudUser.email || '云端账号')}` : '登录并同步云端'; const displayName = cloudUser?.user_metadata?.display_name || cloudUser?.email?.split('@')[0] || '新用户'; return `<section class="view me-view"><div class="page-header"><div><p>保持热爱，记录生活的美好。</p><h1>我的</h1></div><div class="page-header-actions"><button class="account-pill" type="button" data-auth-open>${accountLabel}</button><button class="round-action" type="button" data-open-modal data-info-title="设置" data-info-copy="这里会集中放置主题、通知和语言等偏好设置。" aria-label="设置">⚙</button></div></div><article class="glass-card profile-card" data-open-profile role="button" tabindex="0"><div class="profile-large">${mascotMarkup()}</div><div><h2>${esc(displayName)}</h2><p>${cloudUser ? '云端账号 · 记忆正在同步' : '还没有个人资料'}</p></div><span class="profile-arrow">›</span><div class="stat-row"><span><strong>${state.memories.length}</strong>条记录</span><span><strong>${state.boxes.length}</strong>个主题</span><span><strong>${state.messages.filter((item) => item.role === 'user').length}</strong>次对话</span></div></article><article class="glass-card settings-group"><p class="settings-title">记忆与数据</p>${settingRow('♧', '记忆设置', 'Memory Settings', '›', '管理记忆的保留方式与分类偏好。')}${settingRow('▣', '隐私权限', 'Privacy & Permissions', '›', cloudUser ? '当前数据按账号隔离，只有你能读取自己的记录。' : '登录后可以启用账号隔离的云端数据。')}${settingRow('▤', '本地备份', 'Local Backup', cloudUser ? '云端' : '本地', cloudUser ? '当前账号已启用 Supabase 云端保存。' : '当前仅保存到这台设备，登录后可以同步到云端。')}</article><article class="glass-card settings-group"><p class="settings-title">个人偏好</p>${settingRow('◐', '主题外观', 'Appearance', '默认', '当前使用粉蓝与暖橙的柔和主题。')}${settingRow('♢', '通知提醒', 'Notifications', '未设置', '登录并完成个人设置后，可以选择是否开启提醒。')}${settingRow('文', '语言设置', 'Language', '中文', '当前界面语言为简体中文。')}</article><article class="glass-card settings-group"><p class="settings-title">订阅</p>${settingRow('✦', '小智 Pro', '无限记忆 · 更强分析 · 多设备同步', '了解更多', 'Pro 能力将在接入账号和云端服务后开放。')}</article></section>`; }
+function renderMe() { const accountLabel = cloudUser ? `已连接 · ${esc(cloudUser.email || '云端账号')}` : '登录并同步云端'; const displayName = state.profile?.displayName || cloudUser?.user_metadata?.display_name || cloudUser?.email?.split('@')[0] || '新用户'; return `<section class="view me-view"><div class="page-header"><div><p>保持热爱，记录生活的美好。</p><h1>我的</h1></div><div class="page-header-actions"><button class="account-pill" type="button" data-auth-open>${accountLabel}</button><button class="round-action" type="button" data-open-modal data-info-title="设置" data-info-copy="这里会集中放置主题、通知和语言等偏好设置。" aria-label="设置">⚙</button></div></div><article class="glass-card profile-card" data-open-profile role="button" tabindex="0"><div class="profile-large">${mascotMarkup()}</div><div><h2>${esc(displayName)}</h2><p>${cloudUser ? '云端账号 · 个人资料与记忆正在同步' : '本机资料 · 登录后可跨设备同步'}</p></div><span class="profile-arrow">›</span><div class="stat-row"><span><strong>${state.memories.length}</strong>条记录</span><span><strong>${state.boxes.length}</strong>个主题</span><span><strong>${state.messages.filter((item) => item.role === 'user').length}</strong>次对话</span></div></article><article class="glass-card settings-group"><p class="settings-title">记忆与数据</p>${settingRow('♧', '记忆设置', 'Memory Settings', '›', '管理记忆的保留方式与分类偏好。')}${settingRow('▣', '隐私权限', 'Privacy & Permissions', '›', cloudUser ? '当前数据按账号隔离，只有你能读取自己的记录。' : '登录后可以启用账号隔离的云端数据。')}${settingRow('▤', '本地备份', 'Local Backup', cloudUser ? '云端' : '本地', cloudUser ? '当前账号已启用 Supabase 云端保存。' : '当前仅保存到这台设备，登录后可以同步到云端。')}</article><article class="glass-card settings-group"><p class="settings-title">个人偏好</p>${settingRow('◐', '主题外观', 'Appearance', '默认', '当前使用粉蓝与暖橙的柔和主题。')}${settingRow('♢', '通知提醒', 'Notifications', '未设置', '登录并完成个人设置后，可以选择是否开启提醒。')}${settingRow('文', '语言设置', 'Language', '中文', '当前界面语言为简体中文。')}</article><article class="glass-card settings-group"><p class="settings-title">订阅</p>${settingRow('✦', '小智 Pro', '无限记忆 · 更强分析 · 多设备同步', '了解更多', 'Pro 能力将在接入账号和云端服务后开放。')}</article></section>`; }
 function settingRow(icon, title, subtitle, value, detail) { return `<button class="setting-row" type="button" data-setting-title="${esc(title)}" data-setting-copy="${esc(detail)}"><span class="setting-icon">${icon}</span><span class="setting-copy"><strong>${title}</strong><small>${subtitle}</small></span><span class="setting-value">${value}</span><span class="setting-chevron">›</span></button>`; }
 
 function bindViewEvents() {
@@ -151,8 +160,8 @@ function bindViewEvents() {
   document.querySelectorAll('[data-box-item]').forEach((button) => button.addEventListener('click', () => { const box = state.boxes.find((item) => String(item.id) === button.dataset.boxId); if (box) openInfoModal(box.title, `${box.count} 条内容 · ${box.detail} · ${box.status}`); }));
   document.querySelector('[data-view-all-boxes]')?.addEventListener('click', () => { const search = document.querySelector('[data-box-search]'); if (search) search.value = ''; document.querySelectorAll('[data-box-filter]').forEach((item) => item.classList.remove('is-active')); document.querySelector('[data-box-filter="全部"]')?.classList.add('is-active'); filterBoxes(); document.querySelector('[data-box-list]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
   document.querySelector('[data-dismiss]')?.addEventListener('click', (event) => event.currentTarget.closest('.suggestion-card')?.remove());
-  document.querySelector('[data-open-profile]')?.addEventListener('click', () => openInfoModal('我的小智档案', '这里会汇总你的记录数量、主题数量和相伴天数。'));
-  document.querySelector('[data-open-profile]')?.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openInfoModal('我的小智档案', '这里会汇总你的记录数量、主题数量和相伴天数。'); } });
+  document.querySelector('[data-open-profile]')?.addEventListener('click', openProfileEditor);
+  document.querySelector('[data-open-profile]')?.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProfileEditor(); } });
   document.querySelectorAll('[data-setting-title]').forEach((button) => button.addEventListener('click', () => openInfoModal(button.dataset.settingTitle, button.dataset.settingCopy)));
   document.querySelector('[data-memory-search]')?.addEventListener('click', () => openModal('搜索你的记忆', 'search'));
 }
@@ -160,6 +169,12 @@ function bindViewEvents() {
 function filterBoxes(query = '', type = '全部') { document.querySelectorAll('[data-box-item]').forEach((item) => { const matchesQuery = item.textContent.toLowerCase().includes(query.toLowerCase()); const matchesType = type === '全部' || item.dataset.boxType === type; item.hidden = !(matchesQuery && matchesType); }); }
 function sendMessage(text) { const clean = text.trim(); if (!clean) return; state.messages.push({ role: 'user', text: clean, time: '刚刚' }); const reply = clean.includes('重点') ? '今天可以先完成第三项任务。它的阻力最小，完成后再决定是否继续。' : clean.includes('记忆') ? '我建议先把它放进记忆里，之后再补充时间、地点和你当时的感受。' : '我听到了。先不用急着给它下结论，我会把这条上下文留在今天。'; state.messages.push({ role: 'assistant', text: reply, time: '小智刚刚' }); saveState(); render(); }
 function openInfoModal(title, copy) { openModal(title, 'detail', copy); }
+const profileEditor = document.querySelector('[data-profile-editor]');
+const profileNameInput = document.querySelector('#profile-name');
+let selectedAvatarKey = 'pink-blue';
+function openProfileEditor() { selectedAvatarKey = safeAvatarKey(state.profile?.avatarKey); profileNameInput.value = state.profile?.displayName || ''; document.querySelector('[data-profile-status]').textContent = ''; document.querySelectorAll('[data-avatar-option]').forEach((button) => { const selected = button.dataset.avatarOption === selectedAvatarKey; button.classList.toggle('is-selected', selected); button.setAttribute('aria-checked', String(selected)); }); profileEditor.hidden = false; document.body.style.overflow = 'hidden'; window.setTimeout(() => profileNameInput.focus(), 40); }
+function closeProfileEditor() { profileEditor.hidden = true; document.body.style.overflow = ''; document.querySelector('[data-profile-status]').textContent = ''; }
+function saveProfile() { const name = profileNameInput.value.trim(); if (!name) { document.querySelector('[data-profile-status]').textContent = '请先输入一个昵称。'; profileNameInput.focus(); return; } state.profile = { displayName: name.slice(0, 24), avatarKey: safeAvatarKey(selectedAvatarKey) }; saveState(); closeProfileEditor(); render(); }
 function openModal(title = '把此刻交给小智', mode = 'memory', prefill = '') { modalMode = mode; document.querySelector('#modal-title').textContent = title; document.querySelector('[data-modal-copy]').textContent = mode === 'box' ? '先给这个主题一个名字，之后再慢慢往里收集内容。' : mode === 'search' ? '输入关键词后回车，快速找到你已经记录的内容。' : mode === 'detail' ? '这是当前原型中的说明信息，你可以继续探索其他入口。' : '先记录，不急着分类。之后可以在记忆里慢慢整理。'; document.querySelector('[data-modal-label]').textContent = mode === 'search' ? '关键词' : mode === 'detail' ? '详情' : '内容'; document.querySelector('[data-modal-cancel]').textContent = mode === 'detail' ? '关闭' : '暂时不记'; document.querySelector('[data-save-modal]').textContent = mode === 'box' ? '创建 Box ↗' : mode === 'search' ? '开始搜索 ↗' : mode === 'detail' ? '知道了' : '保存记忆 ↗'; modalInput.value = prefill; modalInput.readOnly = mode === 'detail'; modal.hidden = false; document.body.style.overflow = 'hidden'; window.setTimeout(() => modalInput.focus(), 40); }
 function closeModal() { modal.hidden = true; document.body.style.overflow = ''; modalInput.value = ''; modalInput.readOnly = false; }
 function saveModal() { const value = modalInput.value.trim(); if (modalMode === 'detail') { closeModal(); return; } if (!value) { modalInput.focus(); return; } if (modalMode === 'box') { state.boxes.unshift({ id: Date.now(), icon: '✧', title: value.slice(0, 18), count: 0, detail: '刚刚创建，等待你的第一条内容', status: '私密', type: '灵感' }); saveState(); closeModal(); state.activeTab = 'box'; render(); return; } if (modalMode === 'search') { closeModal(); state.activeTab = 'memory'; render(); window.setTimeout(() => { const firstMatch = [...document.querySelectorAll('.memory-card')].find((card) => card.textContent.toLowerCase().includes(value.toLowerCase())); firstMatch?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 80); return; } state.memories.unshift({ id: Date.now(), date: '刚刚', title: value.slice(0, 18), text: value, tag: '新记录' }); saveState(); closeModal(); state.activeTab = 'memory'; render(); }
@@ -185,7 +200,13 @@ document.querySelector('[data-password-toggle]').addEventListener('click', toggl
 document.querySelector('[data-auth-resend]').addEventListener('click', resendConfirmation);
 document.querySelector('[data-auth-logout]').addEventListener('click', logoutAuth);
 authModal.addEventListener('click', (event) => { if (event.target === authModal) closeAuth(); });
+document.querySelector('[data-profile-close]').addEventListener('click', closeProfileEditor);
+document.querySelector('[data-profile-cancel]').addEventListener('click', closeProfileEditor);
+document.querySelector('[data-profile-save]').addEventListener('click', saveProfile);
+document.querySelectorAll('[data-avatar-option]').forEach((button) => button.addEventListener('click', () => { selectedAvatarKey = safeAvatarKey(button.dataset.avatarOption); document.querySelectorAll('[data-avatar-option]').forEach((item) => { const selected = item === button; item.classList.toggle('is-selected', selected); item.setAttribute('aria-checked', String(selected)); }); }));
+profileEditor.addEventListener('click', (event) => { if (event.target === profileEditor) closeProfileEditor(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !modal.hidden) closeModal(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !authModal.hidden) closeAuth(); });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !profileEditor.hidden) closeProfileEditor(); });
 render();
 void initCloud();

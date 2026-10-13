@@ -19,7 +19,7 @@
           <p class="header-subtitle">记录生活的美好，慢慢成为更懂自己的你。</p>
           <p class="cloud-status" data-cloud-status>未登录 · 本地模式</p>
         </div>
-        <button class="profile-orb" type="button" data-tab="me" aria-label="打开我的页面"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" /><span class="online-dot"></span></button>
+        <button class="profile-orb" type="button" data-tab="me" aria-label="打开我的页面"><img data-header-avatar class="avatar-pink-blue" src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" /><span class="online-dot"></span></button>
       </header>
 
       <section class="view-stack" id="view-stack" aria-live="polite">
@@ -47,6 +47,27 @@
         <label for="modal-input" class="field-label" data-modal-label>内容</label>
         <textarea id="modal-input" rows="4" placeholder="今天发生了什么，或者你突然想到了什么？"></textarea>
         <div class="modal-actions"><button class="text-button" type="button" data-close-modal data-modal-cancel>暂时不记</button><button class="primary-button" type="button" data-save-modal>保存记忆 <span>↗</span></button></div>
+      </section>
+    </div>
+
+    <div class="modal-layer profile-editor-layer" data-profile-editor hidden>
+      <section class="modal-card profile-editor-card" role="dialog" aria-modal="true" aria-labelledby="profile-editor-title">
+        <button class="modal-close" type="button" data-profile-close aria-label="关闭">×</button>
+        <p class="section-kicker">YOUR PROFILE</p>
+        <h2 id="profile-editor-title">编辑个人资料</h2>
+        <p class="modal-copy">换一个更像你的名字和头像。登录后会同步到云端，未登录时保存在本机。</p>
+        <label class="field-label" for="profile-name">怎么称呼你</label>
+        <input class="profile-name-input" id="profile-name" type="text" maxlength="24" autocomplete="nickname" placeholder="输入昵称" />
+        <p class="field-label avatar-label">选择头像</p>
+        <div class="avatar-picker" role="radiogroup" aria-label="选择头像">
+          <button class="avatar-option avatar-pink-blue" type="button" data-avatar-option="pink-blue" role="radio" aria-label="粉蓝小智"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="" /></button>
+          <button class="avatar-option avatar-sky" type="button" data-avatar-option="sky" role="radio" aria-label="天空蓝小智"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="" /></button>
+          <button class="avatar-option avatar-lilac" type="button" data-avatar-option="lilac" role="radio" aria-label="丁香紫小智"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="" /></button>
+          <button class="avatar-option avatar-peach" type="button" data-avatar-option="peach" role="radio" aria-label="暖橙小智"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="" /></button>
+          <button class="avatar-option avatar-mint" type="button" data-avatar-option="mint" role="radio" aria-label="薄荷绿小智"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="" /></button>
+        </div>
+        <p class="profile-editor-status" data-profile-status></p>
+        <div class="modal-actions"><button class="text-button" type="button" data-profile-cancel>取消</button><button class="primary-button" type="button" data-profile-save>保存资料 ↗</button></div>
       </section>
     </div>
 

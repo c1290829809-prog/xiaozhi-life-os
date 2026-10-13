@@ -42,3 +42,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .timeline-intro strong { font-size: 15px; }
 .timeline-intro p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .modal-card textarea[readonly] { min-height: 96px; background: linear-gradient(135deg, #fff9f5, #f4f9ff); color: #687387; }
+.avatar-pink-blue { filter: none; }
+.avatar-sky { filter: hue-rotate(24deg) saturate(.92) brightness(1.05); }
+.avatar-lilac { filter: hue-rotate(48deg) saturate(.82) brightness(1.08); }
+.avatar-peach { filter: hue-rotate(318deg) saturate(1.18) brightness(1.06); }
+.avatar-mint { filter: hue-rotate(118deg) saturate(.78) brightness(1.06); }
+.profile-editor-card { padding-bottom: 22px; }
+.profile-name-input { width: 100%; min-height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 16px; outline: 0; background: #fafaff; color: var(--ink); font-size: 14px; }
+.profile-name-input:focus { border-color: rgba(255,159,108,.65); box-shadow: 0 0 0 4px rgba(255,159,108,.12); }
+.profile-name-input::placeholder { color: #b5bdc9; }
+.avatar-label { margin-top: 18px; }
+.avatar-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; }
+.avatar-option { display: grid; min-height: 62px; place-items: center; border: 1px solid transparent; border-radius: 18px; background: linear-gradient(145deg, #f7f7fc, #edf5ff); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; }
+.avatar-option img { width: 51px; height: 51px; object-fit: contain; image-rendering: pixelated; }
+.avatar-option:hover { transform: translateY(-2px); border-color: rgba(255,159,108,.35); }
+.avatar-option.is-selected { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(255,159,108,.15), 0 10px 20px rgba(255,159,108,.15); }
+.profile-editor-status { min-height: 17px; margin: 10px 0 0; color: #e47b5b; font-size: 11px; }
