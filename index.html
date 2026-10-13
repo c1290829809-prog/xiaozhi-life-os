@@ -46,6 +46,24 @@
         <p class="modal-copy" data-modal-copy>先记录，不急着分类。之后可以在记忆里慢慢整理。</p>
         <label for="modal-input" class="field-label" data-modal-label>内容</label>
         <textarea id="modal-input" rows="4" placeholder="今天发生了什么，或者你突然想到了什么？"></textarea>
+        <section class="memory-photo-field" data-memory-photo-field aria-label="记忆图片">
+          <span class="field-label">添加图片</span>
+          <input id="memory-image" type="file" accept="image/jpeg,image/png,image/webp,image/avif" hidden />
+          <div class="photo-picker-row">
+            <button class="photo-pick-button" type="button" data-pick-image><span aria-hidden="true">＋</span>选择照片</button>
+            <span class="photo-hint">JPG、PNG、WebP 或 AVIF，单张不超过 12 MB</span>
+          </div>
+          <div class="image-preview" data-image-preview hidden>
+            <img data-image-preview-img alt="待保存的记忆图片预览" />
+            <button class="image-remove" type="button" data-remove-image aria-label="移除图片">×</button>
+          </div>
+          <label class="cutout-toggle" for="memory-cutout">
+            <input id="memory-cutout" type="checkbox" />
+            <span class="toggle-check" aria-hidden="true"></span>
+            <span class="cutout-copy"><strong>智能识别抠图</strong><small>在本机处理，首次使用需下载约 44 MB 模型</small></span>
+          </label>
+          <p class="image-process-status" data-image-process-status aria-live="polite"></p>
+        </section>
         <div class="memory-date-field" data-memory-date-field>
           <label for="memory-date" class="field-label">记录到哪一天</label>
           <input id="memory-date" type="date" />
@@ -96,6 +114,6 @@
       </section>
     </div>
 
-    <script type="module" src="script.js?v=5"></script>
+    <script type="module" src="script.js?v=6"></script>
   </body>
 </html>

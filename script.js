@@ -1,6 +1,10 @@
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './supabase-config.js';
 
 const STORAGE_KEY = 'xiaozhi-life-os-v3';
+const IMAGE_BUCKET = 'memory-images';
+const IMAGE_DB_NAME = 'xiaozhi-life-os-media';
+const IMAGE_DB_STORE = 'memory-images';
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 let supabase;
 let cloudSdkAvailable = true;
 try {
@@ -57,6 +61,99 @@ let cloudUser = null;
 let cloudSyncing = false;
 let modalMode = 'memory';
 let memoryDateManuallyChanged = false;
+let captureImageBlob = null;
+let captureOriginalBlob = null;
+let captureImageUrl = '';
+let cutoutRunId = 0;
+let backgroundRemovalPipeline = null;
+let backgroundRemovalPromise = null;
+const memoryImageUrls = new Map();
+
+function openImageDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { reject(new Error('此浏览器暂不支持本地图片保存。')); return; }
+    const request = indexedDB.open(IMAGE_DB_NAME, 1);
+    request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(IMAGE_DB_STORE)) request.result.createObjectStore(IMAGE_DB_STORE); };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('无法打开本地图片空间。'));
+  });
+}
+async function putLocalImage(key, blob) {
+  const db = await openImageDatabase();
+  try { await new Promise((resolve, reject) => { const request = db.transaction(IMAGE_DB_STORE, 'readwrite').objectStore(IMAGE_DB_STORE).put(blob, key); request.onsuccess = resolve; request.onerror = () => reject(request.error); }); }
+  finally { db.close(); }
+}
+async function getLocalImage(key) {
+  const db = await openImageDatabase();
+  try { return await new Promise((resolve, reject) => { const request = db.transaction(IMAGE_DB_STORE, 'readonly').objectStore(IMAGE_DB_STORE).get(key); request.onsuccess = () => resolve(request.result || null); request.onerror = () => reject(request.error); }); }
+  finally { db.close(); }
+}
+function localImageKey(memory) { return `local:${memory.imageOwner || cloudUser?.id || 'guest'}:${memory.imageKey || memory.id}`; }
+async function resizeImageBlob(blob, preserveAlpha = false) {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext('2d', { alpha: preserveAlpha });
+  if (!preserveAlpha) { context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height); }
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const type = preserveAlpha ? 'image/png' : 'image/jpeg';
+  return new Promise((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error('图片压缩失败，请换一张图片试试。')), type, .84));
+}
+async function getBackgroundRemovalPipeline(onProgress) {
+  if (backgroundRemovalPipeline) return backgroundRemovalPipeline;
+  if (!backgroundRemovalPromise) backgroundRemovalPromise = import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1').then(async ({ pipeline, env }) => {
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+    const segmenter = await pipeline('background-removal', 'Ko033/isnet-general-use-onnx', { dtype: 'q8', progress_callback: (progress) => {
+      if (progress.status === 'progress' && progress.total) onProgress?.(`正在下载抠图模型 ${Math.round(progress.progress || 0)}%…`);
+      else if (progress.status === 'done') onProgress?.('模型已就绪，正在识别主体…');
+    } });
+    backgroundRemovalPipeline = segmenter;
+    return segmenter;
+  }).catch((error) => { backgroundRemovalPromise = null; throw error; });
+  return backgroundRemovalPromise;
+}
+async function removeImageBackground(blob, onProgress) {
+  onProgress?.('准备智能抠图…');
+  const segmenter = await getBackgroundRemovalPipeline(onProgress);
+  const inputUrl = URL.createObjectURL(blob);
+  try {
+    onProgress?.('正在本机识别主体…');
+    const output = await segmenter(inputUrl);
+    const result = Array.isArray(output) ? output[0] : output;
+    if (!result?.data || !result.width || !result.height) throw new Error('模型没有生成可用的抠图结果。');
+    const canvas = document.createElement('canvas');
+    canvas.width = result.width; canvas.height = result.height;
+    const context = canvas.getContext('2d');
+    const imageData = new ImageData(new Uint8ClampedArray(result.data), result.width, result.height);
+    context.putImageData(imageData, 0, 0);
+    return await new Promise((resolve, reject) => canvas.toBlob((resultBlob) => resultBlob ? resolve(resultBlob) : reject(new Error('抠图图片生成失败。')), 'image/png'));
+  } finally { URL.revokeObjectURL(inputUrl); }
+}
+async function imageForMemory(memory) {
+  const cacheKey = memory.imagePath && cloudUser ? `cloud:${cloudUser.id}:${memory.imagePath}` : `local:${memory.imageKey || memory.id}`;
+  if (memoryImageUrls.has(cacheKey)) return memoryImageUrls.get(cacheKey);
+  let blob = null;
+  try { blob = await getLocalImage(localImageKey(memory)); } catch {}
+  if (!blob && memory.imagePath && cloudUser) {
+    const downloaded = await supabase.storage.from(IMAGE_BUCKET).download(memory.imagePath);
+    if (!downloaded.error && downloaded.data) blob = downloaded.data;
+    if (blob) { try { await putLocalImage(localImageKey(memory), blob); } catch {} }
+  }
+  if (!blob) return '';
+  const url = URL.createObjectURL(blob);
+  memoryImageUrls.set(cacheKey, url);
+  return url;
+}
+function bindMemoryImages() {
+  document.querySelectorAll('[data-memory-image]').forEach((image) => {
+    const memory = state.memories.find((item) => String(item.id) === image.dataset.memoryImage);
+  if (memory) void imageForMemory(memory).then((url) => { if (url && image.isConnected) image.src = url; }).catch((error) => console.warn('无法读取记忆图片', error));
+  });
+}
 
 function loadState() { try { return { ...structuredClone(defaultState), ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }; } catch { return structuredClone(defaultState); } }
 function saveLocalState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -100,34 +197,63 @@ async function syncStateToCloud() {
   ];
   const results = await Promise.all(operations);
   const failure = results.find((result) => result.error);
+  if (failure) { cloudSyncing = false; setCloudStatus('同步失败', 'error'); console.error(failure.error); return; }
+  const mediaRows = [];
+  let mediaFailure = null;
+  for (const item of state.memories) {
+    let blob = null;
+    try { blob = await getLocalImage(localImageKey(item)); } catch {}
+    if (!blob && !item.imagePath) continue;
+    const extension = blob?.type === 'image/jpeg' ? 'jpg' : blob?.type?.split('/')[1] || 'png';
+    const path = item.imagePath || `${user_id}/${String(item.id)}.${extension}`;
+    if (blob) {
+      const upload = await supabase.storage.from(IMAGE_BUCKET).upload(path, blob, { upsert: true, contentType: blob.type || 'image/png', cacheControl: '3600' });
+      if (upload.error) { mediaFailure = upload.error; break; }
+    }
+    mediaRows.push({ user_id, memory_id: String(item.id), image_path: path, background_removed: Boolean(item.backgroundRemoved), updated_at: new Date().toISOString() });
+    if (blob && item.imageOwner !== user_id) { await putLocalImage(`local:${user_id}:${item.imageKey || item.id}`, blob); item.imageOwner = user_id; }
+    item.imagePath = path;
+  }
+  if (mediaRows.length) {
+    const mediaResult = await supabase.from('memory_media').upsert(mediaRows, { onConflict: 'user_id,memory_id' });
+    if (mediaResult.error) mediaFailure = mediaResult.error;
+  }
+  if (mediaFailure) {
+    console.warn('图片尚未同步到云端。请确认已运行 supabase-memory-images.sql。', mediaFailure);
+    cloudSyncing = false;
+    setCloudStatus('文字已同步 · 图片待配置', 'error');
+    saveLocalState();
+    return;
+  }
   cloudSyncing = false;
-  if (failure) { setCloudStatus('同步失败', 'error'); console.error(failure.error); return; }
   setCloudStatus('已同步', 'ok');
 }
 
 async function hydrateFromCloud() {
   if (!cloudUser) return;
   setCloudStatus('读取云端数据…');
-  const [profile, memories, tasks, boxes, messages] = await Promise.all([
+  const [profile, memories, tasks, boxes, messages, media] = await Promise.all([
     supabase.from('profiles').select('*').maybeSingle(),
     supabase.from('memories').select('*').order('occurred_at', { ascending: false }),
     supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
     supabase.from('boxes').select('*').order('created_at', { ascending: false }),
     supabase.from('chat_messages').select('*').order('created_at', { ascending: true }),
+    supabase.from('memory_media').select('*'),
   ]);
   const failure = [profile, memories, tasks, boxes, messages].find((result) => result.error);
   if (failure) { setCloudStatus('云端读取失败', 'error'); console.error(failure.error); return; }
   state.profile = { displayName: profile.data?.display_name || cloudUser.user_metadata?.display_name || cloudUser.email?.split('@')[0] || '新用户', avatarKey: safeAvatarKey(profile.data?.avatar_url) };
   const hasCloudRows = [memories.data, tasks.data, boxes.data, messages.data].some((rows) => rows.length > 0);
   if (!hasCloudRows) { await syncStateToCloud(); return; }
-  state.memories = memories.data.map((item) => { const storedDate = item.occurred_at ? new Date(item.occurred_at) : new Date(); const dateKey = parseMemoryDate(item.title) || parseMemoryDate(item.body) || localDateKey(storedDate); return { id: item.id, dateKey, date: formatMemoryDate(dateKey), title: item.title, text: item.body, tag: item.tag }; });
+  const mediaByMemory = new Map((media.error ? [] : media.data || []).map((item) => [String(item.memory_id), item]));
+  state.memories = memories.data.map((item) => { const storedDate = item.occurred_at ? new Date(item.occurred_at) : new Date(); const dateKey = parseMemoryDate(item.title) || parseMemoryDate(item.body) || localDateKey(storedDate); const mediaItem = mediaByMemory.get(String(item.id)); return { id: item.id, imageKey: String(item.id), imageOwner: cloudUser.id, imagePath: mediaItem?.image_path || '', backgroundRemoved: Boolean(mediaItem?.background_removed), dateKey, date: formatMemoryDate(dateKey), title: item.title, text: item.body, tag: item.tag }; });
   if (!state.memories.some((item) => item.dateKey === state.selectedMemoryDate)) state.selectedMemoryDate = newestMemoryDate();
   state.calendarMonth = state.selectedMemoryDate.slice(0, 7);
   state.tasks = tasks.data.map((item) => ({ id: item.id, text: item.text, time: item.time_text, done: item.done }));
   state.boxes = boxes.data.map((item) => ({ id: item.id, icon: item.icon, title: item.title, count: item.item_count, detail: item.detail, status: item.status, type: item.box_type }));
   state.messages = messages.data.map((item) => ({ role: item.message_role, text: item.body, time: item.display_time }));
   saveLocalState();
-  setCloudStatus('已同步', 'ok');
+  setCloudStatus(media.error ? '已同步 · 图片云端待配置' : '已同步', media.error ? 'error' : 'ok');
   render();
 }
 
@@ -187,7 +313,7 @@ function renderMemory() {
   const timelineMode = state.memoryView === 'timeline';
   const monthRecords = state.memories.filter((item) => item.dateKey?.startsWith(state.calendarMonth));
   const visibleMemories = timelineMode ? [...state.memories].sort((a, b) => b.dateKey.localeCompare(a.dateKey)) : state.memories.filter((item) => item.dateKey === state.selectedMemoryDate);
-  const memoryCards = visibleMemories.length ? visibleMemories.map((memory) => `<article class="glass-card memory-card" data-memory-id="${memory.id}" role="button" tabindex="0"><div class="memory-meta"><span>${esc(memory.date)}</span><span class="memory-tag">${esc(memory.tag)}</span></div><h3>${esc(memory.title)}</h3><p>${esc(memory.text)}</p><span class="memory-open">查看详情 ›</span></article>`).join('') : `<div class="glass-card empty-state"><strong>${timelineMode ? '还没有记忆' : `${formatMemoryDate(state.selectedMemoryDate)}还没有记录`}</strong><p>${timelineMode ? '把今天的一句话交给小智，之后再慢慢回看。' : '选择有标记的日期回看，或添加一条新的记忆。'}</p></div>`;
+  const memoryCards = visibleMemories.length ? visibleMemories.map((memory) => `<article class="glass-card memory-card" data-memory-id="${esc(memory.id)}" role="button" tabindex="0"><div class="memory-meta"><span>${esc(memory.date)}</span><span class="memory-tag">${esc(memory.tag)}</span></div><h3>${esc(memory.title)}</h3><p>${esc(memory.text)}</p>${memory.imageKey || memory.imagePath ? `<img class="memory-photo" data-memory-image="${esc(memory.id)}" alt="${esc(memory.title)}的记忆图片" loading="lazy" />` : ''}<span class="memory-open">查看详情 ›</span></article>`).join('') : `<div class="glass-card empty-state"><strong>${timelineMode ? '还没有记忆' : `${formatMemoryDate(state.selectedMemoryDate)}还没有记录`}</strong><p>${timelineMode ? '把今天的一句话交给小智，之后再慢慢回看。' : '选择有标记的日期回看，或添加一条新的记忆。'}</p></div>`;
   const selectedLabel = state.selectedMemoryDate === todayDateKey() ? '今天的记忆' : `${formatMemoryDate(state.selectedMemoryDate)}的记忆`;
   return `<section class="view memory-view"><div class="page-header"><div><p>${calendarTitle(state.calendarMonth)}</p><h1>记忆</h1></div><div class="page-header-actions"><button class="round-action" type="button" data-open-modal aria-label="添加记忆">＋</button><button class="round-action" type="button" data-memory-search aria-label="搜索记忆">⌕</button></div></div><div class="segmented"><button class="segment ${timelineMode ? '' : 'is-active'}" type="button" data-memory-view="calendar">日历</button><button class="segment ${timelineMode ? 'is-active' : ''}" type="button" data-memory-view="timeline">时间轴</button></div>${timelineMode ? `<article class="glass-card timeline-intro"><strong>按时间回看</strong><p>把生活里的小片段串起来，看看最近的节奏。</p></article>` : `<article class="glass-card calendar-card"><div class="calendar-head"><button class="calendar-step" type="button" data-calendar-step="-1" aria-label="上个月">‹</button><strong>${calendarTitle(state.calendarMonth)}</strong><span class="calendar-month-count">${monthRecords.length} 条记录</span><button class="calendar-step" type="button" data-calendar-step="1" aria-label="下个月">›</button></div>${renderCalendar()}</article>`}<div class="section-title-row"><div><h2>${timelineMode ? '全部记忆' : selectedLabel}</h2><p>${timelineMode ? 'Ordinary days, extraordinary memories.' : `${visibleMemories.length} 条记录`}</p></div></div><div class="timeline">${memoryCards}</div><button class="quick-capture" type="button" data-open-modal><span>添加一条新的记忆</span><strong>＋</strong></button></section>`;
 }
@@ -197,6 +323,7 @@ function renderMe() { const accountLabel = cloudUser ? `已连接 · ${esc(cloud
 function settingRow(icon, title, subtitle, value, detail) { return `<button class="setting-row" type="button" data-setting-title="${esc(title)}" data-setting-copy="${esc(detail)}"><span class="setting-icon">${icon}</span><span class="setting-copy"><strong>${title}</strong><small>${subtitle}</small></span><span class="setting-value">${value}</span><span class="setting-chevron">›</span></button>`; }
 
 function bindViewEvents() {
+  bindMemoryImages();
   document.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => { state.activeTab = button.dataset.tab; saveState(); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
   document.querySelectorAll('[data-auth-open]').forEach((button) => button.addEventListener('click', openAuth));
   document.querySelectorAll('[data-open-modal]').forEach((button) => button.addEventListener('click', () => button.dataset.infoTitle ? openInfoModal(button.dataset.infoTitle, button.dataset.infoCopy) : openModal()));
@@ -230,9 +357,74 @@ let selectedAvatarKey = 'pink-blue';
 function openProfileEditor() { selectedAvatarKey = safeAvatarKey(state.profile?.avatarKey); profileNameInput.value = state.profile?.displayName || ''; document.querySelector('[data-profile-status]').textContent = ''; document.querySelectorAll('[data-avatar-option]').forEach((button) => { const selected = button.dataset.avatarOption === selectedAvatarKey; button.classList.toggle('is-selected', selected); button.setAttribute('aria-checked', String(selected)); }); profileEditor.hidden = false; document.body.style.overflow = 'hidden'; window.setTimeout(() => profileNameInput.focus(), 40); }
 function closeProfileEditor() { profileEditor.hidden = true; document.body.style.overflow = ''; document.querySelector('[data-profile-status]').textContent = ''; }
 function saveProfile() { const name = profileNameInput.value.trim(); if (!name) { document.querySelector('[data-profile-status]').textContent = '请先输入一个昵称。'; profileNameInput.focus(); return; } state.profile = { displayName: name.slice(0, 24), avatarKey: safeAvatarKey(selectedAvatarKey) }; saveState(); closeProfileEditor(); render(); }
-function openModal(title = '把此刻交给小智', mode = 'memory', prefill = '') { modalMode = mode; document.querySelector('#modal-title').textContent = title; document.querySelector('[data-modal-copy]').textContent = mode === 'box' ? '先给这个主题一个名字，之后再慢慢往里收集内容。' : mode === 'search' ? '输入关键词后回车，快速找到你已经记录的内容。' : mode === 'detail' ? '这是当前原型中的说明信息，你可以继续探索其他入口。' : '先记录，不急着分类。之后可以在记忆里慢慢整理。'; document.querySelector('[data-modal-label]').textContent = mode === 'search' ? '关键词' : mode === 'detail' ? '详情' : '内容'; document.querySelector('[data-modal-cancel]').textContent = mode === 'detail' ? '关闭' : '暂时不记'; document.querySelector('[data-save-modal]').textContent = mode === 'box' ? '创建 Box ↗' : mode === 'search' ? '开始搜索 ↗' : mode === 'detail' ? '知道了' : '保存记忆 ↗'; document.querySelector('[data-memory-date-field]').hidden = mode !== 'memory'; memoryDateManuallyChanged = false; document.querySelector('#memory-date').value = mode === 'memory' ? todayDateKey() : ''; if (mode === 'memory' && parseMemoryDate(prefill)) document.querySelector('#memory-date').value = parseMemoryDate(prefill); modalInput.value = prefill; modalInput.readOnly = mode === 'detail'; modal.hidden = false; document.body.style.overflow = 'hidden'; window.setTimeout(() => modalInput.focus(), 40); }
-function closeModal() { modal.hidden = true; document.body.style.overflow = ''; modalInput.value = ''; modalInput.readOnly = false; }
-function saveModal() { const value = modalInput.value.trim(); if (modalMode === 'detail') { closeModal(); return; } if (!value) { modalInput.focus(); return; } if (modalMode === 'box') { state.boxes.unshift({ id: Date.now(), icon: '✧', title: value.slice(0, 18), count: 0, detail: '刚刚创建，等待你的第一条内容', status: '私密', type: '灵感' }); saveState(); closeModal(); state.activeTab = 'box'; render(); return; } if (modalMode === 'search') { closeModal(); state.activeTab = 'memory'; render(); window.setTimeout(() => { const firstMatch = [...document.querySelectorAll('.memory-card')].find((card) => card.textContent.toLowerCase().includes(value.toLowerCase())); firstMatch?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 80); return; } const inputDate = document.querySelector('#memory-date').value; const parsedDate = !memoryDateManuallyChanged ? parseMemoryDate(value) : ''; const dateKey = isDateKey(inputDate) ? (parsedDate || inputDate) : todayDateKey(); state.memories.unshift({ id: Date.now(), dateKey, date: formatMemoryDate(dateKey), title: value.slice(0, 18), text: value, tag: '新记录' }); state.selectedMemoryDate = dateKey; state.calendarMonth = dateKey.slice(0, 7); saveState(); closeModal(); state.activeTab = 'memory'; render(); }
+function openModal(title = '把此刻交给小智', mode = 'memory', prefill = '') {
+  modalMode = mode;
+  document.querySelector('#modal-title').textContent = title;
+  document.querySelector('[data-modal-copy]').textContent = mode === 'box' ? '先给这个主题一个名字，之后再慢慢往里收集内容。' : mode === 'search' ? '输入关键词后回车，快速找到你已经记录的内容。' : mode === 'detail' ? '这是当前原型中的说明信息，你可以继续探索其他入口。' : '先记录，不急着分类。之后可以在记忆里慢慢整理。';
+  document.querySelector('[data-modal-label]').textContent = mode === 'search' ? '关键词' : mode === 'detail' ? '详情' : '内容';
+  document.querySelector('[data-modal-cancel]').textContent = mode === 'detail' ? '关闭' : '暂时不记';
+  document.querySelector('[data-save-modal]').textContent = mode === 'box' ? '创建 Box ↗' : mode === 'search' ? '开始搜索 ↗' : mode === 'detail' ? '知道了' : '保存记忆 ↗';
+  document.querySelector('[data-memory-date-field]').hidden = mode !== 'memory';
+  document.querySelector('[data-memory-photo-field]').hidden = mode !== 'memory';
+  memoryDateManuallyChanged = false;
+  document.querySelector('#memory-date').value = mode === 'memory' ? todayDateKey() : '';
+  if (mode === 'memory' && parseMemoryDate(prefill)) document.querySelector('#memory-date').value = parseMemoryDate(prefill);
+  modalInput.value = prefill; modalInput.readOnly = mode === 'detail';
+  clearCaptureImage();
+  modal.hidden = false; document.body.style.overflow = 'hidden';
+  window.setTimeout(() => modalInput.focus(), 40);
+}
+function clearCaptureImage() {
+  cutoutRunId++;
+  if (captureImageUrl) URL.revokeObjectURL(captureImageUrl);
+  captureImageUrl = ''; captureImageBlob = null; captureOriginalBlob = null;
+  document.querySelector('#memory-image').value = '';
+  document.querySelector('#memory-cutout').checked = false;
+  document.querySelector('[data-image-preview]').hidden = true;
+  document.querySelector('[data-image-preview-img]').removeAttribute('src');
+  document.querySelector('[data-image-process-status]').textContent = '';
+  document.querySelector('[data-save-modal]').disabled = false;
+}
+function showCaptureImage(blob) {
+  if (captureImageUrl) URL.revokeObjectURL(captureImageUrl);
+  captureImageBlob = blob; captureImageUrl = URL.createObjectURL(blob);
+  document.querySelector('[data-image-preview-img]').src = captureImageUrl;
+  document.querySelector('[data-image-preview]').hidden = false;
+}
+async function applyCaptureCutout() {
+  if (!captureOriginalBlob) { document.querySelector('[data-image-process-status]').textContent = '请先选择一张图片。'; document.querySelector('#memory-cutout').checked = false; return; }
+  const runId = ++cutoutRunId;
+  const status = document.querySelector('[data-image-process-status]');
+  const saveButton = document.querySelector('[data-save-modal]');
+  saveButton.disabled = true;
+  try { const result = await removeImageBackground(captureOriginalBlob, (message) => { if (runId === cutoutRunId) status.textContent = message; }); if (runId === cutoutRunId && document.querySelector('#memory-cutout').checked) { const optimizedResult = await resizeImageBlob(result, true); if (runId === cutoutRunId && document.querySelector('#memory-cutout').checked) { showCaptureImage(optimizedResult); status.textContent = '抠图完成，可直接保存；图片处理在本机完成。'; } } }
+  catch (error) { if (runId === cutoutRunId) { document.querySelector('#memory-cutout').checked = false; showCaptureImage(captureOriginalBlob); status.textContent = `${error.message || '智能抠图暂不可用。'} 已保留原图。`; } }
+  finally { if (runId === cutoutRunId) saveButton.disabled = false; }
+}
+function closeModal() { modal.hidden = true; document.body.style.overflow = ''; modalInput.value = ''; modalInput.readOnly = false; clearCaptureImage(); }
+async function saveModal() {
+  const value = modalInput.value.trim();
+  if (modalMode === 'detail') { closeModal(); return; }
+  if (!value && !captureImageBlob) { modalInput.focus(); return; }
+  if (modalMode === 'box') { state.boxes.unshift({ id: Date.now(), icon: '✧', title: value.slice(0, 18), count: 0, detail: '刚刚创建，等待你的第一条内容', status: '私密', type: '灵感' }); saveState(); closeModal(); state.activeTab = 'box'; render(); return; }
+  if (modalMode === 'search') { closeModal(); state.activeTab = 'memory'; render(); window.setTimeout(() => { const firstMatch = [...document.querySelectorAll('.memory-card')].find((card) => card.textContent.toLowerCase().includes(value.toLowerCase())); firstMatch?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 80); return; }
+  const saveButton = document.querySelector('[data-save-modal]');
+  saveButton.disabled = true; saveButton.textContent = '正在保存…';
+  const id = Date.now();
+  try {
+    if (captureImageBlob) {
+      const optimizedImage = await resizeImageBlob(captureImageBlob, Boolean(document.querySelector('#memory-cutout').checked || captureImageBlob.type === 'image/png'));
+      await putLocalImage(`local:${cloudUser?.id || 'guest'}:${id}`, optimizedImage);
+    }
+    const inputDate = document.querySelector('#memory-date').value;
+    const parsedDate = !memoryDateManuallyChanged ? parseMemoryDate(value) : '';
+    const dateKey = isDateKey(inputDate) ? (parsedDate || inputDate) : todayDateKey();
+    state.memories.unshift({ id, imageKey: captureImageBlob ? String(id) : '', imageOwner: cloudUser?.id || 'guest', imagePath: '', backgroundRemoved: Boolean(captureImageBlob && document.querySelector('#memory-cutout').checked), dateKey, date: formatMemoryDate(dateKey), title: (value || '图片记忆').slice(0, 18), text: value, tag: '新记录' });
+    state.selectedMemoryDate = dateKey; state.calendarMonth = dateKey.slice(0, 7); saveState();
+    closeModal(); state.activeTab = 'memory'; render();
+  } catch (error) { document.querySelector('[data-image-process-status]').textContent = error.message || '图片保存失败，请重试。'; }
+  finally { saveButton.disabled = false; saveButton.innerHTML = '保存记忆 <span>↗</span>'; }
+}
 
 function moveCalendarMonth(offset) { const selected = new Date(`${state.selectedMemoryDate}T12:00:00`); const target = new Date(selected.getFullYear(), selected.getMonth() + offset, 1, 12); const day = Math.min(selected.getDate(), new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()); target.setDate(day); state.selectedMemoryDate = localDateKey(target); state.calendarMonth = state.selectedMemoryDate.slice(0, 7); saveState(); render(); }
 
@@ -250,6 +442,20 @@ async function logoutAuth() { await supabase.auth.signOut(); closeAuth(); }
 
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
 document.querySelector('[data-save-modal]').addEventListener('click', saveModal); modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+document.querySelector('[data-pick-image]').addEventListener('click', () => document.querySelector('#memory-image').click());
+document.querySelector('#memory-image').addEventListener('change', async (event) => {
+  const file = event.currentTarget.files?.[0];
+  if (!file) return;
+  const status = document.querySelector('[data-image-process-status]');
+  if (!/^image\/(jpeg|png|webp|avif)$/.test(file.type) || file.size > MAX_IMAGE_BYTES) {
+    status.textContent = file.size > MAX_IMAGE_BYTES ? '图片超过 12 MB，请先压缩后再上传。' : '请选择 JPG、PNG、WebP 或 AVIF 图片。';
+    event.currentTarget.value = ''; return;
+  }
+  captureOriginalBlob = file; showCaptureImage(file); status.textContent = '图片已添加，保存后会显示在这条记忆里。';
+  if (document.querySelector('#memory-cutout').checked) await applyCaptureCutout();
+});
+document.querySelector('#memory-cutout').addEventListener('change', (event) => { if (event.currentTarget.checked) void applyCaptureCutout(); else { cutoutRunId++; if (captureOriginalBlob) { showCaptureImage(captureOriginalBlob); document.querySelector('[data-image-process-status]').textContent = '已保留原图。'; } document.querySelector('[data-save-modal]').disabled = false; } });
+document.querySelector('[data-remove-image]').addEventListener('click', clearCaptureImage);
 document.querySelectorAll('[data-auth-close]').forEach((button) => button.addEventListener('click', closeAuth));
 document.querySelector('[data-auth-submit]').addEventListener('click', submitAuth);
 document.querySelector('[data-auth-switch]').addEventListener('click', () => { authMode = authMode === 'login' ? 'signup' : 'login'; document.querySelector('[data-auth-status]').textContent = ''; updateAuthUI(); });

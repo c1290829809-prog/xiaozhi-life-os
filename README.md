@@ -10,6 +10,8 @@
 - Box：搜索、分类筛选、创建新的主题 Box
 - 我的：记录统计、记忆与隐私设置、本地备份状态
 - 未登录时使用浏览器 localStorage，登录后通过 Supabase 保存到个人云端数据表
+- 图片记忆未登录时保存在本机 IndexedDB；登录后的私有云端图片同步需在 Supabase SQL Editor 执行 `supabase-memory-images.sql`
+- “智能识别抠图”在浏览器本机运行，不会把原图发给 AI 服务；首次使用会下载模型文件
 - 支持邮箱注册、登录、退出和本地数据迁移
 - Supabase 使用用户级 Row Level Security，不同账号只能读取自己的记录
 - 粉蓝色小智形象为原创素材，位于 `assets/xiaozhi-mascot-pink-blue.png`
