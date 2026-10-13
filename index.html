@@ -46,6 +46,11 @@
         <p class="modal-copy" data-modal-copy>先记录，不急着分类。之后可以在记忆里慢慢整理。</p>
         <label for="modal-input" class="field-label" data-modal-label>内容</label>
         <textarea id="modal-input" rows="4" placeholder="今天发生了什么，或者你突然想到了什么？"></textarea>
+        <div class="memory-date-field" data-memory-date-field>
+          <label for="memory-date" class="field-label">记录到哪一天</label>
+          <input id="memory-date" type="date" />
+          <small>也会识别内容中的日期，例如“10.15”或“10月15日”。</small>
+        </div>
         <div class="modal-actions"><button class="text-button" type="button" data-close-modal data-modal-cancel>暂时不记</button><button class="primary-button" type="button" data-save-modal>保存记忆 <span>↗</span></button></div>
       </section>
     </div>
