@@ -1,8 +1,30 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './supabase-config.js';
 
 const STORAGE_KEY = 'xiaozhi-life-os-v3';
-const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+let supabase;
+let cloudSdkAvailable = true;
+try {
+  const cloudSdk = await import('https://esm.sh/@supabase/supabase-js@2');
+  supabase = cloudSdk.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+} catch {
+  try {
+    const cloudSdk = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    supabase = cloudSdk.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  } catch {
+    cloudSdkAvailable = false;
+    supabase = {
+      auth: {
+        getSession: async () => ({ data: { session: null }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+        signInWithPassword: async () => ({ data: null, error: { message: '云端服务暂时无法加载，当前仍可使用本地模式。' } }),
+        signUp: async () => ({ data: null, error: { message: '云端服务暂时无法加载，请刷新后重试。' } }),
+        resend: async () => ({ data: null, error: { message: '云端服务暂时无法加载，请刷新后重试。' } }),
+        signOut: async () => ({ error: null }),
+      },
+      from: () => ({ select: () => ({ order: async () => ({ data: [], error: null }) }), upsert: async () => ({ error: null }) }),
+    };
+  }
+}
 
 const defaultState = {
   activeTab: 'home',
@@ -73,6 +95,7 @@ async function hydrateFromCloud() {
 }
 
 async function initCloud() {
+  if (!cloudSdkAvailable) { setCloudStatus('未登录 · 本地模式'); return; }
   setCloudStatus('连接云端…');
   const { data, error } = await supabase.auth.getSession();
   if (error) { setCloudStatus('本地模式', 'error'); return; }
@@ -142,10 +165,15 @@ function closeModal() { modal.hidden = true; document.body.style.overflow = ''; 
 function saveModal() { const value = modalInput.value.trim(); if (modalMode === 'detail') { closeModal(); return; } if (!value) { modalInput.focus(); return; } if (modalMode === 'box') { state.boxes.unshift({ id: Date.now(), icon: '✧', title: value.slice(0, 18), count: 0, detail: '刚刚创建，等待你的第一条内容', status: '私密', type: '灵感' }); saveState(); closeModal(); state.activeTab = 'box'; render(); return; } if (modalMode === 'search') { closeModal(); state.activeTab = 'memory'; render(); window.setTimeout(() => { const firstMatch = [...document.querySelectorAll('.memory-card')].find((card) => card.textContent.toLowerCase().includes(value.toLowerCase())); firstMatch?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 80); return; } state.memories.unshift({ id: Date.now(), date: '刚刚', title: value.slice(0, 18), text: value, tag: '新记录' }); saveState(); closeModal(); state.activeTab = 'memory'; render(); }
 
 let authMode = 'login';
+let authPendingEmail = '';
+function authRedirectUrl() { return `${window.location.origin}${window.location.pathname}`; }
 function openAuth() { authModal.hidden = false; document.body.style.overflow = 'hidden'; updateAuthUI(); window.setTimeout(() => document.querySelector('#auth-email')?.focus(), 40); }
-function closeAuth() { authModal.hidden = true; document.body.style.overflow = ''; document.querySelector('[data-auth-status]').textContent = ''; }
-function updateAuthUI() { if (!authModal) return; const loggedIn = Boolean(cloudUser); const title = document.querySelector('#auth-title'); const copy = document.querySelector('[data-auth-copy]'); const switchButton = document.querySelector('[data-auth-switch]'); const submitButton = document.querySelector('[data-auth-submit]'); const logoutButton = document.querySelector('[data-auth-logout]'); const email = document.querySelector('#auth-email'); const password = document.querySelector('#auth-password'); if (loggedIn) { title.textContent = '云端账号已连接'; copy.textContent = `${cloudUser.email || '当前账号'} 的数据正在 Supabase 中保存。`; switchButton.hidden = true; submitButton.hidden = true; logoutButton.hidden = false; email.hidden = true; password.hidden = true; } else { title.textContent = authMode === 'login' ? '登录小智云端' : '注册小智账号'; copy.textContent = authMode === 'login' ? '登录后，记忆、任务、Box 和对话可以跨设备保存。' : '注册后，你的数据会按账号隔离保存。'; switchButton.hidden = false; submitButton.hidden = false; logoutButton.hidden = true; email.hidden = false; password.hidden = false; switchButton.textContent = authMode === 'login' ? '还没有账号？注册' : '已有账号？登录'; submitButton.textContent = authMode === 'login' ? '登录并同步 ↗' : '注册账号 ↗'; } }
-async function submitAuth() { const email = document.querySelector('#auth-email').value.trim(); const password = document.querySelector('#auth-password').value; const status = document.querySelector('[data-auth-status]'); if (!email || password.length < 6) { status.textContent = '请输入有效邮箱和至少 6 位密码。'; return; } status.textContent = authMode === 'login' ? '登录中…' : '注册中…'; const result = authMode === 'login' ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` } }); if (result.error) { status.textContent = result.error.message; return; } if (authMode === 'login') { status.textContent = '登录成功，正在读取云端数据…'; closeAuth(); } else { status.textContent = result.data.session ? '注册成功。' : '注册成功，请查收邮箱完成验证。'; } }
+function closeAuth() { authModal.hidden = true; document.body.style.overflow = ''; document.querySelector('[data-auth-status]').textContent = ''; document.querySelector('[data-auth-resend]').hidden = true; }
+function updateAuthUI() { if (!authModal) return; const loggedIn = Boolean(cloudUser); const title = document.querySelector('#auth-title'); const copy = document.querySelector('[data-auth-copy]'); const switchButton = document.querySelector('[data-auth-switch]'); const submitButton = document.querySelector('[data-auth-submit]'); const logoutButton = document.querySelector('[data-auth-logout]'); const resendButton = document.querySelector('[data-auth-resend]'); const email = document.querySelector('#auth-email'); const password = document.querySelector('#auth-password'); const toggle = document.querySelector('[data-password-toggle]'); password.type = 'password'; toggle.textContent = '显示'; toggle.setAttribute('aria-label', '显示密码'); if (loggedIn) { title.textContent = '云端账号已连接'; copy.textContent = `${cloudUser.email || '当前账号'} 的数据正在 Supabase 中保存。`; switchButton.hidden = true; submitButton.hidden = true; logoutButton.hidden = false; resendButton.hidden = true; email.hidden = true; password.hidden = true; toggle.hidden = true; } else { title.textContent = authMode === 'login' ? '登录小智云端' : '注册小智账号'; copy.textContent = authMode === 'login' ? '登录后，记忆、任务、Box 和对话可以跨设备保存。' : '注册后请打开邮箱中的验证链接，再回来登录。'; switchButton.hidden = false; submitButton.hidden = false; logoutButton.hidden = true; email.hidden = false; password.hidden = false; toggle.hidden = false; switchButton.textContent = authMode === 'login' ? '还没有账号？注册' : '已有账号？登录'; submitButton.textContent = authMode === 'login' ? '登录并同步 ↗' : '注册账号 ↗'; password.autocomplete = authMode === 'login' ? 'current-password' : 'new-password'; } }
+function friendlyAuthError(error) { const message = error?.message || '操作失败，请稍后再试。'; if (/email not confirmed/i.test(message)) return '这个邮箱还没有完成验证，请先查收验证邮件，或点击下方重新发送。'; if (/rate limit|too many requests/i.test(message)) return '邮件发送过于频繁，请稍等几分钟后再试。'; if (/invalid login credentials/i.test(message)) return '邮箱或密码不正确；如果刚注册，请先完成邮箱验证。'; return message; }
+async function submitAuth() { const emailInput = document.querySelector('#auth-email'); const passwordInput = document.querySelector('#auth-password'); const email = emailInput.value.trim(); const password = passwordInput.value; const status = document.querySelector('[data-auth-status]'); const resendButton = document.querySelector('[data-auth-resend]'); resendButton.hidden = true; if (!emailInput.checkValidity() || !email || password.length < 6) { status.textContent = '请输入有效邮箱和至少 6 位密码。'; return; } authPendingEmail = email; status.textContent = authMode === 'login' ? '登录中…' : '注册中…'; try { const result = authMode === 'login' ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: authRedirectUrl() } }); if (result.error) { status.textContent = friendlyAuthError(result.error); if (/email not confirmed/i.test(result.error.message || '')) resendButton.hidden = false; return; } if (authMode === 'login') { status.textContent = '登录成功，正在读取云端数据…'; closeAuth(); } else if (result.data.session) { status.textContent = '注册成功，正在连接云端…'; closeAuth(); } else { status.textContent = '注册成功。请查收邮箱，点击验证链接后，再回到这里登录。邮件可能在垃圾邮件/广告邮件里。'; resendButton.hidden = false; } } catch (error) { status.textContent = friendlyAuthError(error); } }
+async function resendConfirmation() { const email = authPendingEmail || document.querySelector('#auth-email').value.trim(); const status = document.querySelector('[data-auth-status]'); if (!email) { status.textContent = '请先填写注册邮箱。'; return; } status.textContent = '验证邮件发送中…'; const result = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: authRedirectUrl() } }); if (result.error) { status.textContent = friendlyAuthError(result.error); return; } status.textContent = '验证邮件已重新发送，请查收邮箱，也请检查垃圾邮件/广告邮件。'; }
+function togglePassword() { const input = document.querySelector('#auth-password'); const button = document.querySelector('[data-password-toggle]'); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.textContent = visible ? '显示' : '隐藏'; button.setAttribute('aria-label', visible ? '显示密码' : '隐藏密码'); }
 async function logoutAuth() { await supabase.auth.signOut(); closeAuth(); }
 
 document.querySelectorAll('[data-close-modal]').forEach((button) => button.addEventListener('click', closeModal));
@@ -153,6 +181,8 @@ document.querySelector('[data-save-modal]').addEventListener('click', saveModal)
 document.querySelectorAll('[data-auth-close]').forEach((button) => button.addEventListener('click', closeAuth));
 document.querySelector('[data-auth-submit]').addEventListener('click', submitAuth);
 document.querySelector('[data-auth-switch]').addEventListener('click', () => { authMode = authMode === 'login' ? 'signup' : 'login'; document.querySelector('[data-auth-status]').textContent = ''; updateAuthUI(); });
+document.querySelector('[data-password-toggle]').addEventListener('click', togglePassword);
+document.querySelector('[data-auth-resend]').addEventListener('click', resendConfirmation);
 document.querySelector('[data-auth-logout]').addEventListener('click', logoutAuth);
 authModal.addEventListener('click', (event) => { if (event.target === authModal) closeAuth(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !modal.hidden) closeModal(); });

@@ -22,7 +22,12 @@
         <button class="profile-orb" type="button" data-tab="me" aria-label="打开我的页面"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" /><span class="online-dot"></span></button>
       </header>
 
-      <section class="view-stack" id="view-stack" aria-live="polite"></section>
+      <section class="view-stack" id="view-stack" aria-live="polite">
+        <section class="view home-view initial-fallback">
+          <article class="glass-card companion-card"><div class="mascot-wrap"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" /></div><div class="companion-copy"><p class="micro-label">小智陪伴你</p><h2>和你一起，慢慢成长</h2><p>正在加载你的生活空间…</p></div></article>
+          <article class="glass-card empty-state"><strong>正在连接小智</strong><p>如果页面长时间没有变化，请刷新一次。</p></article>
+        </section>
+      </section>
 
       <nav class="bottom-nav" aria-label="主导航">
         <button class="nav-item is-active" type="button" data-tab="home"><span class="nav-icon">⌂</span><span>首页</span></button>
@@ -54,13 +59,17 @@
         <label class="field-label" for="auth-email">邮箱</label>
         <input class="auth-input" id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
         <label class="field-label" for="auth-password">密码</label>
-        <input class="auth-input" id="auth-password" type="password" autocomplete="current-password" placeholder="至少 6 位" />
+        <div class="password-field">
+          <input class="auth-input" id="auth-password" type="password" autocomplete="current-password" placeholder="至少 6 位" />
+          <button class="password-toggle" type="button" data-password-toggle aria-label="显示密码">显示</button>
+        </div>
         <p class="auth-status" data-auth-status></p>
+        <button class="text-button auth-resend" type="button" data-auth-resend hidden>重新发送验证邮件</button>
         <div class="modal-actions"><button class="text-button" type="button" data-auth-switch>还没有账号？注册</button><button class="primary-button" type="button" data-auth-submit>登录并同步 ↗</button></div>
         <button class="text-button auth-logout" type="button" data-auth-logout hidden>退出当前账号</button>
       </section>
     </div>
 
-    <script type="module" src="script.js?v=3"></script>
+    <script type="module" src="script.js?v=4"></script>
   </body>
 </html>
