@@ -17,6 +17,7 @@
           <p class="date-line" data-date-line>2026年10月12日 · 星期一</p>
           <h1 data-greeting>早上好，朋友</h1>
           <p class="header-subtitle">记录生活的美好，慢慢成为更懂自己的你。</p>
+          <p class="cloud-status" data-cloud-status>未登录 · 本地模式</p>
         </div>
         <button class="profile-orb" type="button" data-tab="me" aria-label="打开我的页面"><img src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" /><span class="online-dot"></span></button>
       </header>
@@ -44,6 +45,22 @@
       </section>
     </div>
 
-    <script src="script.js"></script>
+    <div class="auth-layer" data-auth-modal hidden>
+      <section class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <button class="modal-close" type="button" data-auth-close aria-label="关闭">×</button>
+        <p class="section-kicker">CLOUD ACCOUNT</p>
+        <h2 id="auth-title">登录小智云端</h2>
+        <p class="modal-copy" data-auth-copy>登录后，记忆、任务、Box 和对话可以跨设备保存。</p>
+        <label class="field-label" for="auth-email">邮箱</label>
+        <input class="auth-input" id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
+        <label class="field-label" for="auth-password">密码</label>
+        <input class="auth-input" id="auth-password" type="password" autocomplete="current-password" placeholder="至少 6 位" />
+        <p class="auth-status" data-auth-status></p>
+        <div class="modal-actions"><button class="text-button" type="button" data-auth-switch>还没有账号？注册</button><button class="primary-button" type="button" data-auth-submit>登录并同步 ↗</button></div>
+        <button class="text-button auth-logout" type="button" data-auth-logout hidden>退出当前账号</button>
+      </section>
+    </div>
+
+    <script type="module" src="script.js"></script>
   </body>
 </html>
