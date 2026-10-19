@@ -177,6 +177,14 @@ function parseMemoryDate(value) {
 function formatMemoryDate(dateKey) { const date = new Date(`${dateKey}T12:00:00`); return `${date.getMonth() + 1}月${date.getDate()}日`; }
 function calendarTitle(dateKey) { const [year, month] = dateKey.split('-'); return `${year}年${Number(month)}月`; }
 function newestMemoryDate() { return state.memories.reduce((latest, item) => item.dateKey > latest ? item.dateKey : latest, '') || todayDateKey(); }
+function compareMemoryUrgency(a, b) {
+  const dueA = parseMemoryDate(a.title) || parseMemoryDate(a.text) || '';
+  const dueB = parseMemoryDate(b.title) || parseMemoryDate(b.text) || '';
+  if (dueA && dueB && dueA !== dueB) return dueA.localeCompare(dueB);
+  if (dueA && !dueB) return -1;
+  if (!dueA && dueB) return 1;
+  return Number(b.id) - Number(a.id);
+}
 const avatarKeys = ['pink-blue', 'sky', 'lilac', 'peach', 'mint'];
 function safeAvatarKey(value) { return avatarKeys.includes(value) ? value : 'pink-blue'; }
 function mascotMarkup(className = '') { const avatarKey = safeAvatarKey(state.profile?.avatarKey); return `<img class="${className} avatar-${avatarKey}" src="assets/xiaozhi-mascot-pink-blue.png" alt="粉蓝色小智伙伴" />`; }
@@ -312,7 +320,7 @@ function renderCalendar() {
 function renderMemory() {
   const timelineMode = state.memoryView === 'timeline';
   const monthRecords = state.memories.filter((item) => item.dateKey?.startsWith(state.calendarMonth));
-  const visibleMemories = timelineMode ? [...state.memories].sort((a, b) => b.dateKey.localeCompare(a.dateKey)) : state.memories.filter((item) => item.dateKey === state.selectedMemoryDate);
+  const visibleMemories = (timelineMode ? [...state.memories] : state.memories.filter((item) => item.dateKey === state.selectedMemoryDate)).sort(compareMemoryUrgency);
   const memoryCards = visibleMemories.length ? visibleMemories.map((memory) => `<article class="glass-card memory-card" data-memory-id="${esc(memory.id)}" role="button" tabindex="0"><div class="memory-meta"><span>${esc(memory.date)}</span><span class="memory-tag">${esc(memory.tag)}</span></div><h3>${esc(memory.title)}</h3><p>${esc(memory.text)}</p>${memory.imageKey || memory.imagePath ? `<img class="memory-photo" data-memory-image="${esc(memory.id)}" alt="${esc(memory.title)}的记忆图片" loading="lazy" />` : ''}<span class="memory-open">查看详情 ›</span></article>`).join('') : `<div class="glass-card empty-state"><strong>${timelineMode ? '还没有记忆' : `${formatMemoryDate(state.selectedMemoryDate)}还没有记录`}</strong><p>${timelineMode ? '把今天的一句话交给小智，之后再慢慢回看。' : '选择有标记的日期回看，或添加一条新的记忆。'}</p></div>`;
   const selectedLabel = state.selectedMemoryDate === todayDateKey() ? '今天的记忆' : `${formatMemoryDate(state.selectedMemoryDate)}的记忆`;
   return `<section class="view memory-view"><div class="page-header"><div><p>${calendarTitle(state.calendarMonth)}</p><h1>记忆</h1></div><div class="page-header-actions"><button class="round-action" type="button" data-open-modal aria-label="添加记忆">＋</button><button class="round-action" type="button" data-memory-search aria-label="搜索记忆">⌕</button></div></div><div class="segmented"><button class="segment ${timelineMode ? '' : 'is-active'}" type="button" data-memory-view="calendar">日历</button><button class="segment ${timelineMode ? 'is-active' : ''}" type="button" data-memory-view="timeline">时间轴</button></div>${timelineMode ? `<article class="glass-card timeline-intro"><strong>按时间回看</strong><p>把生活里的小片段串起来，看看最近的节奏。</p></article>` : `<article class="glass-card calendar-card"><div class="calendar-head"><button class="calendar-step" type="button" data-calendar-step="-1" aria-label="上个月">‹</button><strong>${calendarTitle(state.calendarMonth)}</strong><span class="calendar-month-count">${monthRecords.length} 条记录</span><button class="calendar-step" type="button" data-calendar-step="1" aria-label="下个月">›</button></div>${renderCalendar()}</article>`}<div class="section-title-row"><div><h2>${timelineMode ? '全部记忆' : selectedLabel}</h2><p>${timelineMode ? 'Ordinary days, extraordinary memories.' : `${visibleMemories.length} 条记录`}</p></div></div><div class="timeline">${memoryCards}</div><button class="quick-capture" type="button" data-open-modal><span>添加一条新的记忆</span><strong>＋</strong></button></section>`;
